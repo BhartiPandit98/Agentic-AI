@@ -1,35 +1,62 @@
 from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
+from langchain_core.tools import render_text_description, tool
 from langchain_openai import ChatOpenAI
-import os
+
 load_dotenv()
-from langchain.agents import create_agent
-from langchain.tools import tool
-from langchain_core.messages import HumanMessage
-from langchain_openai import chat_models
-from langchain_tavily import TavilySearch
-from typing import List
-from pydantic import BaseModel, Field
 
-class Source(BaseModel):
-    """Schema for a source used by the agent"""
-    url:str=Field(description="the URL of the source")
+def get_text_length(text:str)->int:
+    """ Returns the length of a text by characters"""
 
-class AgentResponse(BaseModel):
-    """Schema for agent response with answer and sources"""
-    answer:str = Field(description="The agent's answer to the query")
-    sources:List[Source] = Field(default_factory=list, description="List of sources used to generate the answer")
+@tool
+def get_text_length(text: str) -> int:
+    """Returns the length of a text by characters"""
+    print(f"get_text_length enter with {text=}")
+    text = text.strip("'\n").strip(
+        '"'
+    )  # stripping away non alphabetic characters just in case
 
-llm = ChatOpenAI(model="gpt-5")
-tools = [TavilySearch(
-    max_results=5
-)]
-agent = create_agent(model=llm,tools=tools,response_format=AgentResponse)
+    return len(text)
 
 def main():
-    print("Hello from langchain")
-    result = agent.invoke({"messages":HumanMessage(content="Give me list of job openings posted within 24 hours on Linkedin for agentic ai")})
-    print(result)
+    print("Hello from ReAct LangChain!")
+    print(get_text_length.func("Dog"))
+
 
 if __name__ == "__main__":
     main()
+    print("Hello ReAct LangChain!")
+    tools = [get_text_length]
+
+    template = """
+    Answer the following questions as best you can. You have access to the following tools:
+
+    {tools}
+    
+    Use the following format:
+    
+    Question: the input question you must answer
+    Thought: you should always think about what to do
+    Action: the action to take, should be one of [{tool_names}]
+    Action Input: the input to the action
+    Observation: the result of the action
+    ... (this Thought/Action/Action Input/Observation can repeat N times)
+    Thought: I now know the final answer
+    Final Answer: the final answer to the original input question
+    
+    Begin!
+    
+    Question: {input}
+    Thought:
+    """
+
+    prompt = PromptTemplate.from_template(template=template).partial(
+        tools=render_text_description(tools),
+        tool_names=", ".join([t.name for t in tools]),
+    )
+
+    llm = ChatOpenAI(temperature=0, stop=["\nObservation", "Observation"])
+    agent = {"input":lambda x:x["input"]} | prompt | llm
+
+    res = agent.invoke({"input":"What is the text length of 'DOG'| in characters?"})
+    print(res)
